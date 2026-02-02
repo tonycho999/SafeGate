@@ -7,10 +7,10 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="./css/style.css">
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    
     <meta name="theme-color" content="#0d6efd">
     <link rel="manifest" href="./manifest.json">
-    
-    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="SafeGate">
     <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/1067/1067562.png">
@@ -65,16 +65,6 @@
     </nav>
 
     <main class="main-content">
-        <div id="guardView" class="hidden">
-            <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-3">
-                <h3>Live Security Monitoring</h3>
-                <span class="badge bg-success p-2">System Active</span>
-            </div>
-            <div id="alertList" class="row row-cols-1 g-3">
-                <p class="text-muted text-center py-5">Waiting for live entries...</p>
-            </div>
-        </div>
-
         <div id="adminView" class="hidden">
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h3>Visitor Statistics</h3>
@@ -104,150 +94,4 @@
 
 <script type="module">
     import { auth, db } from "./js/firebase-config.js";
-    import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-    import { doc, getDoc, collection, query, orderBy, getDocs, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-
-    // --- 로그인 로직 ---
-    document.getElementById('loginBtn').onclick = async () => {
-        const email = document.getElementById('loginEmail').value;
-        const pass = document.getElementById('loginPassword').value;
-        try {
-            await signInWithEmailAndPassword(auth, email, pass);
-        } catch (e) {
-            alert("Login error: " + e.message);
-        }
-    };
-
-    // --- 로그아웃 로직 ---
-    document.getElementById('logoutBtn').onclick = () => {
-        signOut(auth).then(() => location.reload());
-    };
-
-    // --- [중요] 인증 상태 및 권한 확인 ---
-    onAuthStateChanged(auth, async (user) => {
-        const overlay = document.getElementById('loadingOverlay');
-        const loginSec = document.getElementById('loginSection');
-        const dashSec = document.getElementById('dashboardSection');
-        const adminView = document.getElementById('adminView');
-        const guardView = document.getElementById('guardView');
-
-        try {
-            if (user) {
-                const userRef = doc(db, "users", user.uid);
-                const userDoc = await getDoc(userRef);
-
-                if (userDoc.exists()) {
-                    const role = userDoc.data().role;
-                    
-                    // UI 공통 세팅
-                    document.getElementById('userRole').innerText = role;
-                    document.getElementById('userEmail').innerText = user.email;
-
-                    // 화면 전환
-                    loginSec.classList.add('hidden');
-                    dashSec.classList.remove('hidden');
-
-                    if (role === 'admin') {
-                        // Admin 화면 활성화
-                        adminView.classList.remove('hidden');
-                        guardView.classList.add('hidden'); // Guard 뷰 숨김
-                        document.querySelectorAll('.admin-only').forEach(el => el.classList.remove('hidden'));
-                        await loadVisitors();
-                    } else {
-                        // Guard 화면 활성화
-                        guardView.classList.remove('hidden');
-                        adminView.classList.add('hidden'); // Admin 뷰 숨김
-                        document.querySelectorAll('.admin-only').forEach(el => el.classList.add('hidden'));
-                        initAlertListener();
-                    }
-                } else {
-                    alert("User profile not found in database.");
-                    signOut(auth);
-                }
-            } else {
-                // 로그아웃 상태
-                dashSec.classList.add('hidden');
-                loginSec.classList.remove('hidden');
-            }
-        } catch (err) {
-            console.error("Auth process error:", err);
-        } finally {
-            // 모든 확인이 끝나면 로딩 오버레이를 반드시 숨김
-            overlay.classList.add('hidden');
-        }
-    });
-if (role === 'admin') {
-    // Admin은 기존 index.html의 리포트 뷰 사용
-} else {
-    // Guard는 전용 모니터링 페이지로 이동
-    window.location.href = "guard.html";
-}
-    // --- [Admin 전용] 방문자 리스트 로드 ---
-    async function loadVisitors() {
-        try {
-            const q = query(collection(db, "visitors"), orderBy("timestamp", "desc"));
-            const snapshot = await getDocs(q);
-            const tbody = document.getElementById('visitorTableBody');
-            tbody.innerHTML = '';
-            
-            let excelData = [];
-            snapshot.forEach(doc => {
-                const data = doc.data();
-                const date = data.timestamp ? data.timestamp.toDate().toLocaleString() : 'N/A';
-                excelData.push({ Date: date, ...data });
-
-                tbody.innerHTML += `
-                    <tr>
-                        <td class="small text-muted">${date}</td>
-                        <td class="fw-bold">${data.name}</td>
-                        <td>${data.contact}</td>
-                        <td>${data.barangay}, ${data.city}</td>
-                        <td><span class="badge bg-light text-dark border">${data.purpose}</span></td>
-                    </tr>`;
-            });
-
-            document.getElementById('exportExcel').onclick = () => {
-                const ws = XLSX.utils.json_to_sheet(excelData);
-                const wb = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(wb, ws, "VisitorLogs");
-                XLSX.writeFile(wb, "SafeGate_Visitors.xlsx");
-            };
-        } catch (e) {
-            console.log("Admin load error (possibly restricted for guards):", e);
-        }
-    }
-    window.loadVisitors = loadVisitors;
-
-    // --- [Guard 전용] 실시간 알림 리스너 ---
-    function initAlertListener() {
-        const list = document.getElementById('alertList');
-        // 초기화 시 기존 "대기 중" 메시지 삭제
-        onSnapshot(collection(db, "alerts"), (snapshot) => {
-            snapshot.docChanges().forEach((change) => {
-                if (change.type === "added") {
-                    // 알림이 오면 첫 번째 안내 텍스트 삭제
-                    if(list.querySelector('.text-muted')) list.innerHTML = '';
-
-                    const data = change.doc.data();
-                    const div = document.createElement('div');
-                    div.className = "alert alert-item shadow-sm p-3 d-flex justify-content-between align-items-center";
-                    div.innerHTML = `
-                        <div>
-                            <h5 class="text-danger fw-bold mb-1">🚫 SECURITY ALERT: BANNED PERSON</h5>
-                            <span class="fs-5"><strong>${data.name}</strong> (${data.contact})</span><br>
-                            <small class="text-dark">Location: ${data.barangay}, ${data.city} | Purpose: ${data.purpose}</small>
-                        </div>
-                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                    `;
-                    list.prepend(div);
-
-                    // 소리 알림 추가 (브라우저 정책상 첫 클릭 이후 작동)
-                    const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
-                    audio.play().catch(() => console.log("Sound blocked by browser"));
-                }
-            });
-        });
-    }
-</script>
-</body>
-</html>
+    import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from "
