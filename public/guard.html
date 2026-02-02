@@ -3,14 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SafeGate Guard - Total Monitoring</title>
+    <title>SafeGate Guard - Live Monitoring</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="./css/style.css">
+    <link rel="manifest" href="./manifest.json">
     <style>
-        body { background-color: #121212; color: #e0e0e0; }
+        body { background-color: #121212; color: #e0e0e0; font-family: 'Inter', sans-serif; }
+        .alert-card { background: #3d080b; border-left: 10px solid #ff4444; border-radius: 15px; animation: pulse-red 2s infinite; }
+        @keyframes pulse-red { 0% { box-shadow: 0 0 0 0 rgba(255, 68, 68, 0.4); } 70% { box-shadow: 0 0 0 15px rgba(255, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 68, 68, 0); } }
         .visitor-table-container { background: #1e1e1e; border-radius: 12px; overflow: hidden; border: 1px solid #333; }
-        .table { color: #e0e0e0; }
-        .alert-card { background: #3d080b; border-left: 10px solid #ff4444; border-radius: 15px; }
+        .table { color: #e0e0e0; margin-bottom: 0; }
+        .table thead { background: #2c2c2c; }
         #loadingOverlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #121212; z-index: 9999; display: flex; justify-content: center; align-items: center; }
         .hidden { display: none !important; }
     </style>
@@ -31,7 +34,11 @@
 <div class="container pb-5">
     <section class="mb-5">
         <h4 class="fw-bold text-danger mb-3">🚨 EMERGENCY ALERTS</h4>
-        <div id="alertList" class="row g-3"></div>
+        <div id="alertList" class="row g-3">
+            <div id="emptyAlertMsg" class="text-center py-4 border border-secondary border-dashed rounded opacity-50">
+                <p class="mb-0">No active security threats.</p>
+            </div>
+        </div>
     </section>
 
     <section>
@@ -39,18 +46,17 @@
             <h4 class="fw-bold text-info mb-0">📅 Today's Visitors</h4>
             <span id="visitorCount" class="badge bg-info text-dark">0 Total</span>
         </div>
-        
         <div class="visitor-table-container shadow">
-            <table class="table table-dark table-hover align-middle mb-0">
+            <table class="table table-dark table-hover align-middle">
                 <thead>
                     <tr>
-                        <th>Time</th>
-                        <th>Name</th>
-                        <th>Purpose</th>
+                        <th style="width: 25%">Time</th>
+                        <th style="width: 40%">Name</th>
+                        <th style="width: 35%">Purpose</th>
                     </tr>
                 </thead>
                 <tbody id="visitorList">
-                    <tr><td colspan="3" class="text-center py-5 text-muted">No data received yet.</td></tr>
+                    <tr><td colspan="3" class="text-center py-5 text-muted">Waiting for data...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -60,9 +66,7 @@
 <script type="module">
     import { auth, db } from "./js/firebase-config.js";
     import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-    import { 
-        collection, query, orderBy, onSnapshot, limit, doc, getDoc 
-    } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+    import { collection, query, onSnapshot, doc, getDoc, limit } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
     onAuthStateChanged(auth, async (user) => {
         if (user) {
@@ -74,49 +78,65 @@
     });
 
     function initSystem() {
-        // --- 1. 알람 리스너 ---
-        onSnapshot(query(collection(db, "alerts"), orderBy("timestamp", "desc"), limit(5)), (snapshot) => {
-            const alertList = document.getElementById('alertList');
-            alertList.innerHTML = '';
+        // --- 1. 알람 리스너 (orderBy 제외하여 인덱스 에러 방지) ---
+        onSnapshot(query(collection(db, "alerts"), limit(5)), (snapshot) => {
+            const container = document.getElementById('alertList');
+            container.innerHTML = '';
+            if (snapshot.empty) container.innerHTML = '<div class="text-center py-4 opacity-50">No threats.</div>';
+            
             snapshot.forEach(doc => {
                 const data = doc.data();
                 const div = document.createElement('div');
-                div.className = "col-12 mb-2";
-                div.innerHTML = `<div class="card alert-card p-3"><strong>🚫 BANNED: ${data.name}</strong><br><small>${data.purpose}</small></div>`;
-                alertList.appendChild(div);
+                div.className = "col-12 mb-2 card alert-card p-3";
+                div.innerHTML = `<strong>🚫 BANNED: ${data.name}</strong><br><small>${data.purpose}</small>`;
+                container.appendChild(div);
             });
         });
 
-        // --- 2. 오늘 방문자 리스너 (강화판) ---
-        const todayStr = new Date().toDateString(); // 오늘 날짜 문자열 (예: "Mon Feb 02 2026")
+        // --- 2. 오늘 방문자 리스너 (문자열 날짜 대응 버전) ---
+        const todayStr = new Date().toLocaleDateString(); // "2026. 2. 2." 형식
 
-        // 쿼리에서 필터를 빼고 전체를 가져온 뒤 자바스크립트에서 필터링 (가장 확실한 방법)
-        const vQuery = query(collection(db, "visitors"), orderBy("timestamp", "desc"), limit(50));
-
-        onSnapshot(vQuery, (snapshot) => {
-            const visitorList = document.getElementById('visitorList');
+        onSnapshot(collection(db, "visitors"), (snapshot) => {
+            const list = document.getElementById('visitorList');
             const countBadge = document.getElementById('visitorCount');
-            visitorList.innerHTML = '';
+            list.innerHTML = '';
             let count = 0;
+            let rows = [];
 
             snapshot.forEach((doc) => {
                 const data = doc.data();
-                const dateObj = data.timestamp ? data.timestamp.toDate() : new Date(); // timestamp가 없으면 현재시간으로 대체 표시
-                
-                // 날짜가 오늘인지 확인
-                if (dateObj.toDateString() === todayStr) {
+                let vDate;
+
+                // 데이터 타입 체크 및 변환
+                if (data.timestamp && typeof data.timestamp.toDate === 'function') {
+                    vDate = data.timestamp.toDate();
+                } else if (typeof data.timestamp === 'string') {
+                    // "2026년 2월 2일..." 형태의 한글 문자열 처리
+                    const cleanDate = data.timestamp.replace(/년 |월 /g, '-').replace(/일.*/, '');
+                    vDate = new Date(cleanDate);
+                } else {
+                    vDate = new Date();
+                }
+
+                if (vDate.toLocaleDateString() === todayStr) {
                     count++;
-                    const row = document.createElement('tr');
-                    row.innerHTML = `
-                        <td class="text-info small">${dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</td>
-                        <td class="fw-bold">${data.name}</td>
-                        <td><span class="badge bg-secondary opacity-75">${data.purpose}</span></td>
-                    `;
-                    visitorList.appendChild(row);
+                    rows.push({
+                        timeObj: vDate,
+                        html: `<tr>
+                            <td class="text-info small">${vDate.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</td>
+                            <td class="fw-bold">${data.name}</td>
+                            <td><span class="badge bg-secondary opacity-75">${data.purpose}</span></td>
+                        </tr>`
+                    });
                 }
             });
+
+            // 최신순 정렬
+            rows.sort((a, b) => b.timeObj - a.timeObj);
+            rows.forEach(r => list.innerHTML += r.html);
+            
             countBadge.innerText = `${count} Today`;
-            if(count === 0) visitorList.innerHTML = '<tr><td colspan="3" class="text-center py-5">No visitors today.</td></tr>';
+            if(count === 0) list.innerHTML = '<tr><td colspan="3" class="text-center py-5">No visitors today.</td></tr>';
         });
     }
 
