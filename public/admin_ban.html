@@ -5,109 +5,99 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SafeGate - Manage Ban List</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        body { background-color: #f8f9fa; }
-        .ban-container { max-width: 800px; margin: 50px auto; background: white; padding: 30px; border-radius: 10px; shadow: 0 4px 10px rgba(0,0,0,0.1); }
-        .btn-delete { color: #dc3545; cursor: pointer; }
-    </style>
 </head>
-<body>
+<body class="bg-light">
 
-<div class="container">
-    <div class="ban-container">
-        <h3 class="mb-4 text-danger">🚫 Ban List Management</h3>
-        
-        <div class="card mb-4">
-            <div class="card-body">
-                <h5 class="card-title">Add New Person to Ban List</h5>
-                <div class="row g-2">
-                    <div class="col-md-5">
-                        <input type="text" id="banName" class="form-control" placeholder="Full Name">
-                    </div>
-                    <div class="col-md-5">
-                        <input type="text" id="banContact" class="form-control" placeholder="Contact Number">
-                    </div>
-                    <div class="col-md-2">
-                        <button id="addBanBtn" class="btn btn-danger w-100">Add</button>
-                    </div>
-                </div>
-                <input type="text" id="banReason" class="form-control mt-2" placeholder="Reason for banning (Optional)">
+<div class="container py-5">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>🚫 Blacklist Management</h2>
+        <a href="index.html" class="btn btn-outline-secondary">Back to Dashboard</a>
+    </div>
+
+    <div class="card p-4 shadow-sm mb-4">
+        <form id="banForm" class="row g-3">
+            <div class="col-md-5">
+                <input type="text" id="banName" class="form-control" placeholder="Full Name" required>
             </div>
-        </div>
+            <div class="col-md-5">
+                <input type="tel" id="banContact" class="form-control" placeholder="Contact Number" required>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-danger w-100">Add to List</button>
+            </div>
+        </form>
+    </div>
 
-        <table class="table table-hover mt-3">
+    <div class="card shadow-sm">
+        <table class="table table-hover mb-0">
             <thead class="table-dark">
                 <tr>
                     <th>Name</th>
                     <th>Contact</th>
-                    <th>Reason</th>
                     <th>Action</th>
                 </tr>
             </thead>
             <tbody id="banTableBody">
                 </tbody>
         </table>
-        <div class="mt-3">
-            <a href="index.html" class="btn btn-secondary">Back to Dashboard</a>
-        </div>
     </div>
 </div>
 
 <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-    import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+    import { auth, db } from "./js/firebase-config.js";
+    import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+    import { collection, addDoc, getDocs, deleteDoc, doc, query, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-    const firebaseConfig = { /* 이전과 동일한 설정 */ };
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
-    const banCollection = collection(db, "ban_list");
-
-    // 1. 블랙리스트 추가
-    document.getElementById('addBanBtn').onclick = async () => {
-        const name = document.getElementById('banName').value;
-        const contact = document.getElementById('banContact').value;
-        const reason = document.getElementById('banReason').value;
-
-        if (!name || !contact) return alert("Please enter Name and Contact.");
-
-        try {
-            await addDoc(banCollection, {
-                name: name,
-                contact: contact,
-                reason: reason,
-                addedAt: new Date()
-            });
-            alert("Added to Ban List.");
-            document.getElementById('banName').value = '';
-            document.getElementById('banContact').value = '';
-            document.getElementById('banReason').value = '';
-        } catch (e) { console.error(e); }
-    };
-
-    // 2. 블랙리스트 실시간 동기화 및 렌더링
-    onSnapshot(banCollection, (snapshot) => {
-        const tbody = document.getElementById('banTableBody');
-        tbody.innerHTML = '';
-        snapshot.forEach((documentSnapshot) => {
-            const data = documentSnapshot.data();
-            const id = documentSnapshot.id;
-
-            tbody.innerHTML += `
-                <tr>
-                    <td>${data.name}</td>
-                    <td>${data.contact}</td>
-                    <td>${data.reason || '-'}</td>
-                    <td>
-                        <span class="btn-delete" onclick="deleteBan('${id}')">Remove</span>
-                    </td>
-                </tr>
-            `;
-        });
+    // 인증 확인
+    onAuthStateChanged(auth, (user) => {
+        if (!user) window.location.href = "index.html";
+        loadBanList();
     });
 
-    // 3. 블랙리스트 삭제 함수 (전역 등록)
+    const banForm = document.getElementById('banForm');
+    const banTable = document.getElementById('banTableBody');
+
+    // 1. 차단 목록 추가 로직
+    banForm.onsubmit = async (e) => {
+        e.preventDefault();
+        const name = document.getElementById('banName').value.trim();
+        const contact = document.getElementById('banContact').value.trim();
+
+        try {
+            // [중요] ban_list 컬렉션에 추가
+            await addDoc(collection(db, "ban_list"), {
+                name: name,
+                contact: contact,
+                createdAt: new Date()
+            });
+            alert("Successfully added to blacklist.");
+            banForm.reset();
+        } catch (error) {
+            console.error("Add failed:", error);
+            alert("Error: Only admins can manage this list. Check Firebase Rules.");
+        }
+    };
+
+    // 2. 실시간 목록 로드 및 삭제 로직
+    function loadBanList() {
+        onSnapshot(collection(db, "ban_list"), (snapshot) => {
+            banTable.innerHTML = '';
+            snapshot.forEach((docSnap) => {
+                const data = docSnap.data();
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${data.name}</td>
+                    <td>${data.contact}</td>
+                    <td><button class="btn btn-sm btn-outline-danger" onclick="deleteBan('${docSnap.id}')">Remove</button></td>
+                `;
+                banTable.appendChild(tr);
+            });
+        });
+    }
+
+    // 삭제 함수 연결
     window.deleteBan = async (id) => {
-        if (confirm("Are you sure you want to remove this person from the ban list?")) {
+        if(confirm("Remove this person from blacklist?")) {
             await deleteDoc(doc(db, "ban_list", id));
         }
     };
