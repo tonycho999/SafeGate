@@ -93,8 +93,8 @@
             });
         });
 
-        // --- 2. 오늘 방문자 리스너 (문자열 날짜 대응 버전) ---
-        const todayStr = new Date().toLocaleDateString(); // "2026. 2. 2." 형식
+        // --- 2. 오늘 방문자 리스너 (문자열 날짜 강력 대응 버전) ---
+        const todayStr = new Date().toLocaleDateString();
 
         onSnapshot(collection(db, "visitors"), (snapshot) => {
             const list = document.getElementById('visitorList');
@@ -107,14 +107,20 @@
                 const data = doc.data();
                 let vDate;
 
-                // 데이터 타입 체크 및 변환
-                if (data.timestamp && typeof data.timestamp.toDate === 'function') {
-                    vDate = data.timestamp.toDate();
-                } else if (typeof data.timestamp === 'string') {
-                    // "2026년 2월 2일..." 형태의 한글 문자열 처리
-                    const cleanDate = data.timestamp.replace(/년 |월 /g, '-').replace(/일.*/, '');
-                    vDate = new Date(cleanDate);
-                } else {
+                // [중요] 데이터 타입 체크 및 변환 로직
+                try {
+                    if (data.timestamp && typeof data.timestamp.toDate === 'function') {
+                        vDate = data.timestamp.toDate(); // 정상적인 Timestamp 객체
+                    } else if (typeof data.timestamp === 'string') {
+                        // 문자열인 경우 (스크린샷 상태)
+                        // "2026년 2월 2일..." 형태에서 날짜만 추출하여 변환 시도
+                        const dateOnly = data.timestamp.split(' PM')[0].split(' AM')[0]
+                                          .replace(/년 |월 /g, '-').replace('일', '');
+                        vDate = new Date(dateOnly);
+                    } else {
+                        vDate = new Date(); // 변환 불가 시 현재 시간
+                    }
+                } catch (e) {
                     vDate = new Date();
                 }
 
@@ -137,6 +143,8 @@
             
             countBadge.innerText = `${count} Today`;
             if(count === 0) list.innerHTML = '<tr><td colspan="3" class="text-center py-5">No visitors today.</td></tr>';
+        }, (err) => {
+            console.error("Snapshot error:", err);
         });
     }
 
