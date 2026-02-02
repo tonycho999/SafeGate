@@ -176,7 +176,12 @@
             overlay.classList.add('hidden');
         }
     });
-
+if (role === 'admin') {
+    // Admin은 기존 index.html의 리포트 뷰 사용
+} else {
+    // Guard는 전용 모니터링 페이지로 이동
+    window.location.href = "guard.html";
+}
     // --- [Admin 전용] 방문자 리스트 로드 ---
     async function loadVisitors() {
         try {
