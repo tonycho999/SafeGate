@@ -16,9 +16,12 @@
         .alert-item { border-left: 5px solid #dc3545; background: #fff5f5; margin-bottom: 15px; animation: slideIn 0.4s ease-out; }
         @keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
     </style>
+    <link rel="stylesheet" href="./css/style.css">
 </head>
 <body>
-
+<div id="loadingOverlay">
+        <div class="spinner-border text-primary" role="status"></div>
+</div>
 <div id="loginSection" class="container">
     <div class="card p-5">
         <h2 class="text-center mb-4 fw-bold text-primary">SafeGate</h2>
