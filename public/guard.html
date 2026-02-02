@@ -8,8 +8,8 @@
     <link rel="stylesheet" href="./css/style.css">
     <link rel="manifest" href="./manifest.json">
     <style>
-        body { background-color: #121212; color: #e0e0e0; }
-        /* 실시간 긴급 알람 스타일 */
+        body { background-color: #121212; color: #e0e0e0; font-family: 'Inter', sans-serif; }
+        /* 긴급 알람 스타일 */
         .alert-card {
             background: #3d080b;
             border-left: 10px solid #ff4444;
@@ -21,10 +21,10 @@
             70% { box-shadow: 0 0 0 15px rgba(255, 68, 68, 0); }
             100% { box-shadow: 0 0 0 0 rgba(255, 68, 68, 0); }
         }
-        /* 일반 방문자 리스트 스타일 */
-        .visitor-table { background: #1e1e1e; border-radius: 10px; overflow: hidden; }
+        /* 테이블 스타일 */
+        .visitor-table-container { background: #1e1e1e; border-radius: 12px; overflow: hidden; border: 1px solid #333; }
         .table { color: #e0e0e0; margin-bottom: 0; }
-        .table thead { background: #2c2c2c; }
+        .table thead { background: #2c2c2c; border-bottom: 2px solid #444; }
         .status-dot { height: 10px; width: 10px; border-radius: 50%; display: inline-block; margin-right: 5px; }
         #loadingOverlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #121212; z-index: 9999; display: flex; justify-content: center; align-items: center; }
         #loadingOverlay.hidden { display: none; }
@@ -37,7 +37,7 @@
 </div>
 
 <nav class="navbar navbar-dark bg-black shadow-sm mb-4">
-    <div class="container-fluid">
+    <div class="container-fluid px-4">
         <span class="navbar-brand fw-bold text-primary">🛡️ SafeGate GUARD</span>
         <div class="d-flex align-items-center">
             <div id="connStatus" class="me-3 small text-muted">Connecting...</div>
@@ -48,7 +48,10 @@
 
 <div class="container pb-5">
     <section class="mb-5">
-        <h4 class="fw-bold text-danger mb-3">🚨 EMERGENCY ALERTS</h4>
+        <h4 class="fw-bold text-danger mb-3 d-flex align-items-center">
+            <span class="spinner-grow spinner-grow-sm text-danger me-2"></span>
+            🚨 EMERGENCY ALERTS
+        </h4>
         <div id="alertList" class="row g-3">
             <div id="emptyAlertMsg" class="text-center py-4 border border-secondary border-dashed rounded opacity-50">
                 <p class="mb-0">No active security threats detected.</p>
@@ -56,7 +59,7 @@
         </div>
     </section>
 
-    <hr class="border-secondary my-4">
+    <hr class="border-secondary my-5">
 
     <section>
         <div class="d-flex justify-content-between align-items-end mb-3">
@@ -64,20 +67,20 @@
             <span id="visitorCount" class="badge bg-info text-dark">0 Total</span>
         </div>
         
-        <div class="visitor-table shadow">
+        <div class="visitor-table-container shadow">
             <div class="table-responsive">
                 <table class="table table-dark table-hover align-middle">
                     <thead>
                         <tr>
-                            <th>Time</th>
-                            <th>Name</th>
-                            <th>Contact</th>
-                            <th>Purpose</th>
+                            <th style="width: 20%;">Time</th>
+                            <th style="width: 25%;">Name</th>
+                            <th style="width: 25%;">Contact</th>
+                            <th style="width: 30%;">Purpose</th>
                         </tr>
                     </thead>
                     <tbody id="visitorList">
                         <tr>
-                            <td colspan="4" class="text-center py-4 text-muted">No visitors registered today.</td>
+                            <td colspan="4" class="text-center py-5 text-muted">Waiting for today's visitors...</td>
                         </tr>
                     </tbody>
                 </table>
@@ -90,30 +93,41 @@
     import { auth, db } from "./js/firebase-config.js";
     import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
     import { 
-        collection, query, orderBy, onSnapshot, where, Timestamp 
+        collection, query, orderBy, onSnapshot, limit, doc, getDoc 
     } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-    // --- 인증 상태 확인 ---
-    onAuthStateChanged(auth, (user) => {
+    // --- 인증 및 권한 상태 감시 ---
+    onAuthStateChanged(auth, async (user) => {
         if (!user) {
             window.location.href = "index.html";
-        } else {
-            initSystem();
+            return;
+        }
+        
+        try {
+            const userDoc = await getDoc(doc(db, "users", user.uid));
+            if (userDoc.exists() && (userDoc.data().role === 'guard' || userDoc.data().role === 'admin')) {
+                initGuardSystem();
+            } else {
+                alert("Guard access only.");
+                signOut(auth);
+            }
+        } catch (err) {
+            console.error("Auth check failed:", err);
+        } finally {
             document.getElementById('loadingOverlay').classList.add('hidden');
         }
     });
 
-    function initSystem() {
-        // 1. 실시간 긴급 알람 리스너 (Banned Persons)
+    function initGuardSystem() {
         initAlertListener();
-        // 2. 오늘 방문자 리스트 리스너 (General Visitors)
         initTodayVisitorsListener();
     }
 
-    // --- [기능 1] 실시간 긴급 알람 리스너 ---
+    // --- 1. 긴급 알람 리스너 ---
     function initAlertListener() {
         const alertContainer = document.getElementById('alertList');
-        const q = query(collection(db, "alerts"), orderBy("timestamp", "desc"));
+        // alerts 컬렉션에 새 문서가 추가될 때마다 즉시 반응
+        const q = query(collection(db, "alerts"), orderBy("timestamp", "desc"), limit(5));
 
         onSnapshot(q, (snapshot) => {
             document.getElementById('connStatus').innerHTML = `<span class="status-dot bg-success"></span>Online`;
@@ -127,7 +141,7 @@
                     const time = data.timestamp ? data.timestamp.toDate().toLocaleTimeString() : 'Now';
 
                     const card = document.createElement('div');
-                    card.className = "col-12";
+                    card.className = "col-12 animate-slide-in";
                     card.innerHTML = `
                         <div class="card alert-card p-4 mb-2">
                             <div class="d-flex justify-content-between align-items-center">
@@ -142,54 +156,57 @@
                     `;
                     alertContainer.prepend(card);
                     
-                    // 사이렌 소리 재생
+                    // 사이렌 소리 재생 시도
                     new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3').play().catch(() => {});
                 }
             });
         });
     }
 
-    // --- [기능 2] 오늘 방문자 실시간 리스트 ---
+    // --- 2. 오늘 방문자 리스트 리스너 (강화된 버전) ---
     function initTodayVisitorsListener() {
         const visitorTable = document.getElementById('visitorList');
         const countBadge = document.getElementById('visitorCount');
 
-        // 오늘 00:00:00 타임스탬프 계산
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const startOfToday = Timestamp.fromDate(today);
+        // 오늘 날짜 00:00:00 기준 시간 설정
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
 
-        const q = query(
-            collection(db, "visitors"), 
-            where("timestamp", ">=", startOfToday),
-            orderBy("timestamp", "desc")
-        );
+        // 복합 쿼리 색인 에러 방지를 위해 orderBy만 사용하고 필터링은 클라이언트에서 수행
+        const q = query(collection(db, "visitors"), orderBy("timestamp", "desc"), limit(100));
 
         onSnapshot(q, (snapshot) => {
-            visitorTable.innerHTML = ''; // 테이블 초기화
-            countBadge.innerText = `${snapshot.size} Total`;
-
-            if (snapshot.empty) {
-                visitorTable.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-muted">No visitors registered today.</td></tr>';
-                return;
-            }
+            visitorTable.innerHTML = ''; 
+            let todayCount = 0;
 
             snapshot.forEach((doc) => {
                 const data = doc.data();
-                const time = data.timestamp ? data.timestamp.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '---';
+                const visitDate = data.timestamp ? data.timestamp.toDate() : null;
 
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td class="text-info">${time}</td>
-                    <td class="fw-bold">${data.name}</td>
-                    <td>${data.contact}</td>
-                    <td><span class="badge bg-secondary">${data.purpose}</span></td>
-                `;
-                visitorTable.appendChild(tr);
+                // 오늘 방문한 데이터만 골라내기
+                if (visitDate && visitDate >= todayStart) {
+                    todayCount++;
+                    const time = visitDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td class="text-info">${time}</td>
+                        <td class="fw-bold">${data.name}</td>
+                        <td>${data.contact}</td>
+                        <td><span class="badge bg-secondary opacity-75">${data.purpose}</span></td>
+                    `;
+                    visitorTable.appendChild(tr);
+                }
             });
+
+            countBadge.innerText = `${todayCount} Today`;
+            
+            if (todayCount === 0) {
+                visitorTable.innerHTML = '<tr><td colspan="4" class="text-center py-5 text-muted">No visitors registered today.</td></tr>';
+            }
         }, (error) => {
-            console.error("Visitors Listener failed:", error);
-            // 만약 'The query requires an index' 에러가 나면 콘솔 링크를 클릭해 색인을 만들어야 합니다.
+            console.error("Visitor list error:", error);
+            // Index 에러 시 콘솔의 링크를 클릭하여 색인 생성 필수
         });
     }
 
