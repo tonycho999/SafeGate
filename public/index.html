@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SafeGate Admin - Management</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <style>
+        body { background-color: #f4f7f6; }
+        .sidebar { height: 100vh; background: #212529; color: white; padding-top: 20px; }
+        .main-content { padding: 30px; }
+        .card { border: none; shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        #loginSection { max-width: 400px; margin: 100px auto; }
+        .hidden { display: none; }
+        .alert-badge { position: absolute; top: 10px; right: 10px; }
+    </style>
+</head>
+<body>
+
+<div id="loginSection" class="container">
+    <div class="card p-4">
+        <h3 class="text-center mb-4">SafeGate Login</h3>
+        <input type="email" id="loginEmail" class="form-control mb-2" placeholder="Email">
+        <input type="password" id="loginPassword" class="form-control mb-3" placeholder="Password">
+        <button id="loginBtn" class="btn btn-primary w-100">Login</button>
+    </div>
+</div>
+
+<div id="dashboardSection" class="container-fluid hidden">
+    <div class="row">
+        <nav class="col-md-2 sidebar">
+            <h4 class="text-center">SafeGate</h4>
+            <hr>
+            <div class="p-3">
+                <p id="userRole" class="badge bg-info text-dark"></p>
+                <p id="userEmail" class="small"></p>
+                <button id="logoutBtn" class="btn btn-outline-light btn-sm w-100 mt-3">Logout</button>
+            </div>
+        </nav>
+
+        <main class="col-md-10 main-content">
+            <div id="guardView" class="hidden">
+                <h3>Guard Dashboard - Live Alerts</h3>
+                <div id="alertList" class="mt-4">
+                    </div>
+            </div>
+
+            <div id="adminView" class="hidden">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h3>Admin Dashboard - Visitor Reports</h3>
+                    <button id="exportExcel" class="btn btn-success">Download Excel</button>
+                </div>
+                
+                <div class="btn-group mb-3">
+                    <button class="btn btn-outline-secondary btn-sm" onclick="loadVisitors('daily')">Daily</button>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="loadVisitors('weekly')">Weekly</button>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="loadVisitors('monthly')">Monthly</button>
+                </div>
+
+                <table class="table table-hover bg-white">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Date</th>
+                            <th>Name</th>
+                            <th>Contact</th>
+                            <th>Address (Barangay, City)</th>
+                            <th>Purpose</th>
+                        </tr>
+                    </thead>
+                    <tbody id="visitorTableBody">
+                        </tbody>
+                </table>
+            </div>
+        </main>
+    </div>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+    import { getFirestore, doc, getDoc, collection, query, orderBy, getDocs, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+    const firebaseConfig = { /* 위 guest.html과 동일한 설정 사용 */ };
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    // --- 로그인 로직 ---
+    document.getElementById('loginBtn').onclick = async () => {
+        const email = document.getElementById('loginEmail').value;
+        const pass = document.getElementById('loginPassword').value;
+        try {
+            await signInWithEmailAndPassword(auth, email, pass);
+        } catch (e) { alert("Login Failed: " + e.message); }
+    };
+
+    document.getElementById('logoutBtn').onclick = () => signOut(auth);
+
+    // --- 인증 상태 감시 및 UI 전환 ---
+    onAuthStateChanged(auth, async (user) => {
+        if (user) {
+            const userDoc = await getDoc(doc(db, "users", user.uid));
+            const role = userDoc.exists() ? userDoc.data().role : 'guard'; // 기본값 guard
+
+            document.getElementById('loginSection').classList.add('hidden');
+            document.getElementById('dashboardSection').classList.remove('hidden');
+            document.getElementById('userRole').innerText = role.toUpperCase();
+            document.getElementById('userEmail').innerText = user.email;
+
+            if (role === 'admin') {
+                document.getElementById('adminView').classList.remove('hidden');
+                loadVisitors('daily');
+            } else {
+                document.getElementById('guardView').classList.remove('hidden');
+                initAlertListener();
+            }
+        } else {
+            document.getElementById('loginSection').classList.remove('hidden');
+            document.getElementById('dashboardSection').classList.add('hidden');
+        }
+    });
+
+    // --- Admin: 방문자 리스트 로드 및 엑셀 변환 ---
+    async function loadVisitors(range) {
+        const q = query(collection(db, "visitors"), orderBy("timestamp", "desc"));
+        const snapshot = await getDocs(q);
+        const tbody = document.getElementById('visitorTableBody');
+        tbody.innerHTML = '';
+        
+        let visitorData = [];
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            const date = data.timestamp?.toDate().toLocaleString() || 'N/A';
+            visitorData.push({ Date: date, ...data });
+
+            tbody.innerHTML += `
+                <tr>
+                    <td>${date}</td>
+                    <td>${data.name}</td>
+                    <td>${data.contact}</td>
+                    <td>${data.barangay}, ${data.city}</td>
+                    <td>${data.purpose}</td>
+                </tr>`;
+        });
+
+        // 엑셀 저장 버튼 이벤트 바인딩
+        document.getElementById('exportExcel').onclick = () => {
+            const ws = XLSX.utils.json_to_sheet(visitorData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Visitors");
+            XLSX.writeFile(wb, `SafeGate_Visitors_${range}.xlsx`);
+        };
+    }
+    window.loadVisitors = loadVisitors;
+
+    // --- Guard: 실시간 Ban List 탐지 알림 ---
+    function initAlertListener() {
+        onSnapshot(collection(db, "alerts"), (snapshot) => {
+            const alertList = document.getElementById('alertList');
+            snapshot.docChanges().forEach((change) => {
+                if (change.type === "added") {
+                    const data = change.doc.data();
+                    const alertDiv = document.createElement('div');
+                    alertDiv.className = "alert alert-danger alert-dismissible fade show";
+                    alertDiv.innerHTML = `
+                        <strong>SECURITY ALERT!</strong> Banned visitor detected: ${data.name} (${data.contact}) 
+                        <br><small>Purpose: ${data.purpose}</small>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    `;
+                    alertList.prepend(alertDiv);
+                    // 소리 알림 추가 가능: new Audio('alert.mp3').play();
+                }
+            });
+        });
+    }
+</script>
+</body>
+</html>
