@@ -12,7 +12,23 @@
         body { background-color: #121212; color: #e0e0e0; }
         .visitor-table-container { background: #1e1e1e; border-radius: 12px; overflow: hidden; border: 1px solid #333; }
         .table { color: #e0e0e0; margin-bottom: 0; }
-        .alert-card { background: #3d080b; border-left: 10px solid #ff4444; border-radius: 15px; margin-bottom: 10px; }
+        
+        /* 알림 카드 디자인 보완 */
+        .alert-card { 
+            background: #5a0000 !important; /* 배경을 좀 더 밝은 레드로 변경 */
+            border: 2px solid #ff4444; 
+            border-radius: 15px; 
+            margin-bottom: 10px; 
+            position: relative;
+        }
+        
+        /* 알림 카드 내부 글자색 흰색 강제 */
+        .alert-card strong, 
+        .alert-card small, 
+        .alert-card div { 
+            color: #ffffff !important; 
+        }
+
         #loadingOverlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #121212; z-index: 9999; display: flex; justify-content: center; align-items: center; }
         .hidden { display: none !important; }
     </style>
@@ -70,7 +86,6 @@
                 const userDoc = await getDoc(doc(db, "users", user.uid));
                 if (userDoc.exists()) {
                     const userData = userDoc.data();
-                    // [해결] ReferenceError 방지: userData.role로 직접 참조
                     if (userData.role === 'guard' || userData.role === 'admin') {
                         initGuardSystem();
                     }
@@ -83,20 +98,35 @@
     });
 
     function initGuardSystem() {
-        // 1. 알람 리스너
+        // 1. 알람 리스너 (글자색 반영)
         onSnapshot(collection(db, "alerts"), (snapshot) => {
             const container = document.getElementById('alertList');
             container.innerHTML = '';
             snapshot.forEach(doc => {
                 const data = doc.data();
                 const div = document.createElement('div');
-                div.className = "card alert-card p-3";
-                div.innerHTML = `<strong>🚫 BANNED: ${data.name}</strong><br><small>${data.purpose}</small>`;
+                div.className = "card alert-card p-3 shadow-lg";
+                
+                // 내부 HTML 구조 변경 및 닫기 버튼(흰색) 추가
+                div.innerHTML = `
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <strong class="fs-4">🚫 BANNED: ${data.name}</strong><br>
+                            <div class="mt-1 fs-5">Contact: ${data.contact || 'N/A'}</div>
+                            <div class="mt-1 opacity-75">Reason: ${data.purpose}</div>
+                        </div>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button>
+                    </div>
+                `;
                 container.appendChild(div);
+
+                // 알림음 재생 시도
+                const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+                audio.play().catch(e => console.log("Sound interaction required"));
             });
         });
 
-        // 2. 방문자 리스트 리스너 (문자열 날짜 대응)
+        // 2. 방문자 리스트 리스너
         const todayStr = new Date().toDateString();
 
         onSnapshot(collection(db, "visitors"), (snapshot) => {
@@ -109,13 +139,10 @@
             snapshot.forEach((doc) => {
                 const data = doc.data();
                 let vDate;
-
-                // [해결] 데이터가 문자열('2026년...')이어도 강제로 날짜로 변환
                 try {
                     if (data.timestamp && typeof data.timestamp.toDate === 'function') {
                         vDate = data.timestamp.toDate();
                     } else if (typeof data.timestamp === 'string') {
-                        // 한글 날짜 형식을 시스템이 인식 가능한 형식으로 변환 시도
                         const cleanDate = data.timestamp.replace(/년 |월 /g, '-').replace('일', '').split(' PM')[0].split(' AM')[0];
                         vDate = new Date(cleanDate);
                     } else {
