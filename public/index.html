@@ -11,81 +11,58 @@
     <meta name="theme-color" content="#0d6efd">
     <link rel="manifest" href="./manifest.json">
     <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="SafeGate">
-    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/1067/1067562.png">
 </head>
 <body>
 
-<div id="loadingOverlay">
+<div id="loadingOverlay" style="position:fixed; top:0; left:0; width:100%; height:100%; background:white; z-index:9999; display:flex; justify-content:center; align-items:center;">
     <div class="spinner-border text-primary" role="status"></div>
 </div>
 
 <div id="loginSection" class="container hidden">
-    <div class="card p-5 shadow-lg">
+    <div class="card p-5 shadow-lg mt-5" style="max-width: 450px; margin: auto;">
         <h2 class="text-center mb-4 fw-bold text-primary">SafeGate</h2>
-        <p class="text-center text-muted mb-4">Sign in to manage building security</p>
         <div class="mb-3">
-            <label class="form-label">Email Address</label>
-            <input type="email" id="loginEmail" class="form-control form-control-lg" placeholder="admin@test.com">
+            <label class="form-label">Email</label>
+            <input type="email" id="loginEmail" class="form-control" placeholder="admin@test.com">
         </div>
         <div class="mb-4">
             <label class="form-label">Password</label>
-            <input type="password" id="loginPassword" class="form-control form-control-lg" placeholder="••••••••">
+            <input type="password" id="loginPassword" class="form-control" placeholder="••••••••">
         </div>
-        <button id="loginBtn" class="btn btn-primary w-100 btn-lg shadow-sm">Sign In</button>
+        <button id="loginBtn" class="btn btn-primary w-100 btn-lg">Sign In</button>
     </div>
 </div>
 
 <div id="dashboardSection" class="hidden">
-    <nav class="sidebar">
-        <div class="text-center mb-5">
-            <h3 class="fw-bold text-white">🛡️ SafeGate</h3>
+    <nav class="sidebar bg-dark text-white p-4" style="width: 250px; height: 100vh; position: fixed;">
+        <h3 class="fw-bold mb-5">🛡️ SafeGate</h3>
+        <div class="mb-4">
+            <span id="userRole" class="badge bg-info text-dark text-uppercase">Role</span>
+            <div id="userEmail" class="small text-truncate mt-1">email@test.com</div>
         </div>
-        <div class="px-3">
-            <div class="p-3 bg-secondary bg-opacity-25 rounded mb-4">
-                <span id="userRole" class="badge bg-info text-dark mb-2 text-uppercase">Role</span>
-                <div id="userEmail" class="small text-truncate text-light">email@test.com</div>
-            </div>
-            <ul class="nav flex-column gap-2">
-                <li class="nav-item">
-                    <a href="index.html" class="nav-link text-white py-2 rounded bg-primary">Dashboard</a>
-                </li>
-                <li class="nav-item admin-only hidden">
-                    <a href="admin_ban.html" class="nav-link text-white py-2">Manage Ban List</a>
-                </li>
-                <li class="nav-item admin-only hidden">
-                    <a href="admin_users.html" class="nav-link text-white py-2">Manage Accounts</a>
-                </li>
-            </ul>
-            <div style="margin-top: 100px;">
-                <button id="logoutBtn" class="btn btn-outline-danger btn-sm w-100">Logout</button>
-            </div>
-        </div>
+        <ul class="nav flex-column gap-2">
+            <li class="nav-item"><a href="index.html" class="nav-link text-white active">Dashboard</a></li>
+            <li class="nav-item admin-only hidden"><a href="admin_ban.html" class="nav-link text-white">Manage Ban List</a></li>
+            <li class="nav-item admin-only hidden"><a href="admin_users.html" class="nav-link text-white">Manage Accounts</a></li>
+        </ul>
+        <button id="logoutBtn" class="btn btn-outline-danger btn-sm w-100 mt-5">Logout</button>
     </nav>
 
-    <main class="main-content">
+    <main class="main-content" style="margin-left: 260px; padding: 30px;">
         <div id="adminView" class="hidden">
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h3>Visitor Statistics</h3>
                 <div>
-                    <button id="exportExcel" class="btn btn-success me-2 px-4">Excel Export</button>
-                    <button class="btn btn-light border px-4" onclick="loadVisitors()">Refresh</button>
+                    <button id="exportExcel" class="btn btn-success">Excel Export</button>
+                    <button class="btn btn-light border" onclick="loadVisitors()">Refresh</button>
                 </div>
             </div>
             <div class="card p-4 shadow-sm">
-                <table class="table table-hover align-middle">
-                    <thead class="table-light">
-                        <tr>
-                            <th>Entry Time</th>
-                            <th>Full Name</th>
-                            <th>Contact</th>
-                            <th>Address (PH)</th>
-                            <th>Purpose</th>
-                        </tr>
+                <table class="table table-hover">
+                    <thead>
+                        <tr><th>Time</th><th>Name</th><th>Contact</th><th>Address</th><th>Purpose</th></tr>
                     </thead>
-                    <tbody id="visitorTableBody">
-                        </tbody>
+                    <tbody id="visitorTableBody"></tbody>
                 </table>
             </div>
         </div>
@@ -94,4 +71,96 @@
 
 <script type="module">
     import { auth, db } from "./js/firebase-config.js";
-    import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from "
+    import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+    import { doc, getDoc, collection, query, orderBy, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+    // --- 로그인 처리 ---
+    document.getElementById('loginBtn').onclick = async () => {
+        const email = document.getElementById('loginEmail').value;
+        const pass = document.getElementById('loginPassword').value;
+        try {
+            await signInWithEmailAndPassword(auth, email, pass);
+        } catch (e) {
+            alert("Login error: " + e.message);
+        }
+    };
+
+    // --- 로그아웃 처리 ---
+    document.getElementById('logoutBtn').onclick = () => {
+        signOut(auth).then(() => location.reload());
+    };
+
+    // --- 권한 확인 및 화면 표시 (에러 수정됨) ---
+    onAuthStateChanged(auth, async (user) => {
+        const overlay = document.getElementById('loadingOverlay');
+        const loginSec = document.getElementById('loginSection');
+        const dashSec = document.getElementById('dashboardSection');
+
+        try {
+            if (user) {
+                const userDoc = await getDoc(doc(db, "users", user.uid));
+                if (userDoc.exists()) {
+                    const userData = userDoc.data();
+                    const userRole = userData.role; // [해결] role 변수를 정확히 정의
+
+                    if (userRole === 'admin') {
+                        document.getElementById('userRole').innerText = userRole;
+                        document.getElementById('userEmail').innerText = user.email;
+                        loginSec.classList.add('hidden');
+                        dashSec.classList.remove('hidden');
+                        document.getElementById('adminView').classList.remove('hidden');
+                        document.querySelectorAll('.admin-only').forEach(el => el.classList.remove('hidden'));
+                        loadVisitors();
+                    } else if (userRole === 'guard') {
+                        // 가드인 경우 전용 페이지로 이동
+                        window.location.href = "guard.html";
+                    }
+                }
+            } else {
+                loginSec.classList.remove('hidden');
+                dashSec.classList.add('hidden');
+            }
+        } catch (err) {
+            console.error("Auth check error:", err);
+        } finally {
+            if (overlay) overlay.style.display = 'none'; // 로딩 제거
+        }
+    });
+
+    async function loadVisitors() {
+        try {
+            const q = query(collection(db, "visitors"), orderBy("timestamp", "desc"));
+            const snapshot = await getDocs(q);
+            const tbody = document.getElementById('visitorTableBody');
+            tbody.innerHTML = '';
+            
+            let excelData = [];
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                const date = data.timestamp && typeof data.timestamp.toDate === 'function' 
+                             ? data.timestamp.toDate().toLocaleString() 
+                             : (data.timestamp || 'N/A');
+                
+                excelData.push({ Date: date, ...data });
+                tbody.innerHTML += `
+                    <tr>
+                        <td class="small text-muted">${date}</td>
+                        <td class="fw-bold">${data.name}</td>
+                        <td>${data.contact}</td>
+                        <td>${data.barangay}, ${data.city}</td>
+                        <td><span class="badge bg-light text-dark border">${data.purpose}</span></td>
+                    </tr>`;
+            });
+
+            document.getElementById('exportExcel').onclick = () => {
+                const ws = XLSX.utils.json_to_sheet(excelData);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "Visitors");
+                XLSX.writeFile(wb, "SafeGate_Visitors.xlsx");
+            };
+        } catch (e) { console.error(e); }
+    }
+    window.loadVisitors = loadVisitors;
+</script>
+</body>
+</html>
