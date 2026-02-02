@@ -6,6 +6,8 @@
     <title>SafeGate Guard - Live Monitoring</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="./css/style.css">
+    <meta name="mobile-web-app-capable" content="yes">
+    <link rel="manifest" href="./manifest.json">
     <style>
         body { background-color: #121212; color: #e0e0e0; }
         .visitor-table-container { background: #1e1e1e; border-radius: 12px; overflow: hidden; border: 1px solid #333; }
@@ -49,7 +51,7 @@
                     </tr>
                 </thead>
                 <tbody id="visitorList">
-                    <tr><td colspan="3" class="text-center py-5 text-muted">No entries found for today.</td></tr>
+                    <tr><td colspan="3" class="text-center py-5 text-muted">No visitors found.</td></tr>
                 </tbody>
             </table>
         </div>
@@ -68,20 +70,20 @@
                 const userDoc = await getDoc(doc(db, "users", user.uid));
                 if (userDoc.exists()) {
                     const userData = userDoc.data();
-                    // [해결] 콘솔 에러 원인인 role 변수 참조 수정
+                    // [해결] ReferenceError 방지: userData.role로 직접 참조
                     if (userData.role === 'guard' || userData.role === 'admin') {
                         initGuardSystem();
                     }
                 }
             } catch (e) { console.error(e); }
-            overlay.classList.add('hidden');
+            if(overlay) overlay.classList.add('hidden');
         } else {
             window.location.href = "index.html";
         }
     });
 
     function initGuardSystem() {
-        // 1. 긴급 알람 리스너
+        // 1. 알람 리스너
         onSnapshot(collection(db, "alerts"), (snapshot) => {
             const container = document.getElementById('alertList');
             container.innerHTML = '';
@@ -94,7 +96,7 @@
             });
         });
 
-        // 2. 방문자 리스트 리스너 (문자열 날짜 완벽 대응)
+        // 2. 방문자 리스트 리스너 (문자열 날짜 대응)
         const todayStr = new Date().toDateString();
 
         onSnapshot(collection(db, "visitors"), (snapshot) => {
@@ -108,13 +110,13 @@
                 const data = doc.data();
                 let vDate;
 
-                // [해결] 데이터가 문자열이든 객체든 무조건 날짜로 변환
+                // [해결] 데이터가 문자열('2026년...')이어도 강제로 날짜로 변환
                 try {
                     if (data.timestamp && typeof data.timestamp.toDate === 'function') {
                         vDate = data.timestamp.toDate();
                     } else if (typeof data.timestamp === 'string') {
-                        // "2026년 2월 2일" 같은 한글 형식을 날짜 객체로 변환
-                        const cleanDate = data.timestamp.replace(/년 |월 /g, '-').replace('일', '');
+                        // 한글 날짜 형식을 시스템이 인식 가능한 형식으로 변환 시도
+                        const cleanDate = data.timestamp.replace(/년 |월 /g, '-').replace('일', '').split(' PM')[0].split(' AM')[0];
                         vDate = new Date(cleanDate);
                     } else {
                         vDate = new Date();
@@ -127,8 +129,8 @@
                         time: vDate,
                         html: `<tr>
                             <td class="text-info small">${vDate.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</td>
-                            <td class="fw-bold">${data.name}</td>
-                            <td><span class="badge bg-secondary opacity-75">${data.purpose}</span></td>
+                            <td class="fw-bold">${data.name || 'Unknown'}</td>
+                            <td><span class="badge bg-secondary opacity-75">${data.purpose || 'Visit'}</span></td>
                         </tr>`
                     });
                 }
@@ -137,8 +139,7 @@
             rows.sort((a, b) => b.time - a.time);
             rows.forEach(r => list.innerHTML += r.html);
             countBadge.innerText = `${count} Today`;
-            
-            if(count === 0) list.innerHTML = '<tr><td colspan="3" class="text-center py-5 text-muted">No visitors today.</td></tr>';
+            if(count === 0) list.innerHTML = '<tr><td colspan="3" class="text-center py-5 text-muted">No entries for today.</td></tr>';
         });
     }
 
