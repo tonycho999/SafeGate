@@ -1,0 +1,18 @@
+{
+  "short_name": "SafeGate",
+  "name": "SafeGate Building Security",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/1067/1067562.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/index.html",
+  "background_color": "#1a1d20",
+  "display": "standalone",
+  "scope": "/",
+  "theme_color": "#0d6efd",
+  "description": "SafeGate Visitor Management System"
+}
